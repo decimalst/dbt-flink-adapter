@@ -1,0 +1,6 @@
+name: "flink_http"
+version: "0.1"
+config-version: 2
+
+macro-paths:
+  - macros

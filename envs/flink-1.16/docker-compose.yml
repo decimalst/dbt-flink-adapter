@@ -1,0 +1,15 @@
+version: "3.9"
+
+services:
+  jobmanager:
+    extends:
+      file: ../../docker-compose.yml
+      service: jobmanager
+  taskmanager:
+    extends:
+      file: ../../docker-compose.yml
+      service: taskmanager
+  flink-sql-proxy:
+    extends:
+      file: ../../docker-compose.yml
+      service: flink-sql-proxy

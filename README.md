@@ -6,6 +6,116 @@
 [![PyPI version](https://badge.fury.io/py/dbt-flink-adapter.svg)](https://badge.fury.io/py/dbt-flink-adapter)
 [![Downloads](https://pepy.tech/badge/dbt-flink-adapter)](https://pepy.tech/badge/dbt-flink-adapter)
 
+This repository now contains two related efforts:
+
+* The original dbt ↔ Flink SQL Gateway adapter (documented below).
+* A **hackathon-scale HTTP proxy + adapter shim** that lets dbt submit compiled SQL
+  directly to a long running Flink application via the REST API without deploying the
+  SQL Gateway.
+
+This hack documentation lives in the sections immediately below. The legacy SQL Gateway
+content is still available afterwards for reference.
+
+## FastAPI SQL proxy + dbt adapter (hackathon)
+
+### TL;DR quick start
+
+```bash
+make up        # build containers and start JobManager, TaskManager and the proxy
+make logs      # follow proxy and JobManager logs in one stream
+make down      # tear everything down
+```
+
+The compose file is located at `envs/flink-1.16/docker-compose.yml`; the `Makefile`
+invokes `docker compose` from that folder so the usual `docker compose` commands work
+as well.
+
+### Configuration
+
+The proxy reads its configuration from environment variables (see `proxy/config.py` for
+the full list). The defaults assume:
+
+* `FLINK_REST_URL=http://jobmanager:8081`
+* `FLINK_APPLICATION_NAME=sql-runner`
+* Optional bearer authentication is enabled when `AUTH_TOKEN` is set (the compose file
+  uses `hackathon`).
+
+To route SQL, the proxy either needs an existing application job id (`FLINK_APPLICATION_JOB_ID`)
+or access to a runnable application JAR via `FLINK_APPLICATION_JAR_PATH`. When neither is
+provided the proxy will return HTTP 502 until a job appears on the cluster.
+
+### Health check and SQL endpoint
+
+* `GET /healthz` → simple `{"status": "ok"}` response.
+* `POST /v1/sql` → accepts JSON payloads matching:
+
+  ```json
+  {
+    "sql": "CREATE TABLE ...; INSERT INTO ...;",
+    "vars": {"example": "value"},
+    "idempotency_key": "optional-key"
+  }
+  ```
+
+  The proxy also recognises the `Idempotency-Key` header and caches responses for
+  10 minutes. Requests must include `Authorization: Bearer <token>` when
+  `AUTH_TOKEN` is configured.
+
+An example `curl` invocation once the stack is running:
+
+```bash
+export PROXY=http://localhost:8080
+export AUTH_TOKEN=hackathon
+
+curl -X POST "${PROXY}/v1/sql" \
+  -H "Authorization: Bearer ${AUTH_TOKEN}" \
+  -H "Idempotency-Key: test-123" \
+  -H "Content-Type: application/json" \
+  -d @- <<'JSON'
+{"sql": "$(tr '\n' ' ' < proxy/examples/example.sql)"}
+JSON
+```
+
+### dbt adapter shim
+
+The new adapter lives in `adapter/dbt_flink_http_adapter/` and is published as
+`dbt-flink-http-adapter` via the bundled `pyproject.toml`. It reuses dbt's SQL adapter
+base classes and replaces the connection manager with a thin HTTP client that posts to
+the proxy.
+
+Install it locally with:
+
+```bash
+pip install -e adapter/
+```
+
+Define a profile entry similar to the following (see `adapter/README.md` for details):
+
+```yaml
+project:
+  target: dev
+  outputs:
+    dev:
+      type: flink_http
+      host: http://flink-sql-proxy:8080
+      token: ${AUTH_TOKEN}
+      schema: default_database
+      database: default_catalog
+```
+
+There is a toy dbt project in `adapter/examples/dbt_http_demo/`. After installing the
+adapter and copying the profile snippet into `~/.dbt/profiles.yml`, run:
+
+```bash
+cd adapter/examples/dbt_http_demo
+dbt run
+```
+
+Each compiled model will be posted to `/v1/sql` and the proxy response (job id, status
+and logs URL) will show up in the dbt logs.
+
+---
+
 This is an MVP of dbt Flink Adapter. It allows materializing of dbt models as Flink cluster streaming pipelines and batch jobs.
 
 Check out our [blogpost about dbt-flink-adapter with tutorial](https://getindata.com/blog/dbt-run-real-time-analytics-on-apache-flink-announcing-the-dbt-flink-adapter/)

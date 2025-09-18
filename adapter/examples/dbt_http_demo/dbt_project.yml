@@ -1,0 +1,10 @@
+name: dbt_http_demo
+version: 1.0
+config-version: 2
+profile: dbt_http_demo
+model-paths:
+  - models
+
+models:
+  dbt_http_demo:
+    +materialized: table

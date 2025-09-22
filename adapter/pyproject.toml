@@ -6,13 +6,9 @@ build-backend = "setuptools.build_meta"
 name = "dbt-flink-http-adapter"
 version = "0.1.0"
 description = "Hackathon HTTP adapter that routes dbt SQL execution through the Flink SQL proxy"
-authors = [
-  { name = "Hackathon Team" }
-]
-readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
-  "dbt-core>=1.4.0,<1.6.0",
+  "dbt-core>=1.4.0,<1.9.0",
   "httpx>=0.27.0",
 ]
 
@@ -21,9 +17,14 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["dbt_flink_http_adapter*"]
+include = [
+  "dbt_flink_http_adapter*",
+  "dbt.adapters.flink_http*",
+]
 
 [tool.setuptools.package-data]
-dbt_flink_http_adapter = [
-  "include/**/*",
-]
+dbt_flink_http_adapter = ["include/**/*"]
+
+# dbt plugin discovery: point to the shim module
+[project.entry-points."dbt.adapters"]
+flink_http = "dbt.adapters.flink_http"

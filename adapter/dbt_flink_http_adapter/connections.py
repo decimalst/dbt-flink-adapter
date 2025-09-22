@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -11,6 +12,11 @@ from dbt.contracts.connection import AdapterResponse, Connection, ConnectionStat
 from dbt.events.functions import fire_event
 from dbt.events.types import SQLQueryStatus
 from dbt.exceptions import DbtDatabaseError
+
+try:  # dbt-core<=1.5 exposes RuntimeException, newer versions use DbtRuntimeError
+    from dbt.exceptions import RuntimeException  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover - compatibility shim
+    from dbt.exceptions import DbtRuntimeError as RuntimeException
 
 
 @dataclass
@@ -163,3 +169,22 @@ class FlinkHttpConnectionManager(SQLConnectionManager):
     def commit(self) -> None:
         connection = self.get_thread_connection()
         connection.transaction_open = False
+
+    def cancel(self, connection) -> None:
+        """
+        Called by dbt to cancel an in-flight query. If your HTTP proxy
+        cannot cancel server-side work, this can be a no-op.
+        """
+        return
+
+    @contextmanager
+    def exception_handler(self, sql, connection_name=None):
+        """
+        Wrap execution to raise dbt-friendly errors.
+        """
+        try:
+            yield
+        except Exception as exc:
+            raise RuntimeException(
+                f"Flink HTTP error while executing SQL on {connection_name or 'default'}:\n{sql}\n{exc}"
+            ) from exc
